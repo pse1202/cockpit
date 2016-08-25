@@ -41,7 +41,7 @@ clean-local:
 	find $(builddir) -name '*.gc??' -delete
 	find $(srcdir) -name '*.pyc' -delete
 
-SUFFIXES = .css .css.gz .min.css .min.css.gz .js .js.gz .min.js .min.js.gz .map .map.gz .jsx .html .html.gz .min.html .min.html.gz .woff .woff.gz .1 .8 .5
+SUFFIXES = .css .css.gz .min.css .min.css.gz .js .js.gz .min.js .min.js.gz .map .map.gz .jsx .html .html.gz .min.html .min.html.gz .svg .svg.gz .woff .woff.gz .1 .8 .5
 
 V_CHECK = $(V_CHECK_$(V))
 V_CHECK_ = $(V_CHECK_$(AM_DEFAULT_VERBOSITY))
@@ -108,6 +108,8 @@ GZ_RULE = \
 .min.js.min.js.gz:
 	$(GZ_RULE)
 .map.map.gz:
+	$(GZ_RULE)
+.svg.svg.gz:
 	$(GZ_RULE)
 .woff.woff.gz:
 	$(GZ_RULE)
@@ -332,6 +334,13 @@ upload-pot:
 download-po:
 	zanata-cli -B pull --min-doc-percent 30 --project-config "$(srcdir)/tools/zanata.xml" -s "$(builddir)/po" -t "$(srcdir)/po"
 
+# Build and install po.xx.js files
+podir = $(pkgdatadir)/shell
+po_FILES = $(addprefix po/po.,$(addsuffix .js,$(shell cat $(srcdir)/po/LINGUAS)))
+nodist_po_DATA = $(po_FILES:.js=.js.gz) po/po.js.gz
+EXTRA_DIST += po/po.js $(po_FILES)
+CLEANFILES += $(nodist_po_DATA) po/po.js.gz $(po_FILES)
+
 BOWER = $(srcdir)/lib
 
 BOWER_CLEAN = \
@@ -354,9 +363,7 @@ include lib/Makefile.am
 include pkg/dashboard/Makefile.am
 include pkg/docker/Makefile.am
 include pkg/kubernetes/Makefile.am
-include pkg/networkmanager/Makefile.am
 include pkg/playground/Makefile.am
-include pkg/realmd/Makefile.am
 include pkg/shell/Makefile.am
 include pkg/systemd/Makefile.am
 include pkg/storaged/Makefile.am

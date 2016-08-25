@@ -17,16 +17,16 @@
  * along with Cockpit; If not, see <http://www.gnu.org/licenses/>.
  */
 
-require([
-    "jquery",
-    "base1/cockpit",
-    "network/mustache",
-    "network/plot",
-    "system/server",
-    "network/patterns",
-    "network/flot",
-], function($, cockpit, Mustache, plot, server) {
-"use strict";
+var $ = require('jquery');
+var cockpit = require('cockpit');
+
+var Mustache = require('mustache');
+var plot = require('plot');
+var journal = require('journal');
+
+/* jQuery extensions */
+require('patterns');
+require('flot');
 
 var _ = cockpit.gettext;
 var C_ = cockpit.gettext;
@@ -781,6 +781,11 @@ function NetworkManagerModel() {
         case 12: return 'adsl';
         case 13: return 'bridge';
         case 15: return 'team';
+        case 16: return 'tun';
+        case 17: return 'ip_tunnel';
+        case 18: return 'macvlan';
+        case 19: return 'vxlan';
+        case 20: return 'veth';
         default: return '';
         }
     }
@@ -986,8 +991,9 @@ function NetworkManagerModel() {
                 // TODO - Nail down how NM really handles this.
 
                 function check_con(con) {
-                    var cs = connection_settings(con);
-                    if (cs.type == cs.slave_type) {
+                    var master_settings = connection_settings(con);
+                    var my_settings = connection_settings(obj);
+                    if (master_settings.type == my_settings.slave_type) {
                         obj.Masters.push(con);
                         con.Slaves.push(obj);
                     }
@@ -1001,7 +1007,6 @@ function NetworkManagerModel() {
                         obj.Masters.push(master);
                         master.Slaves.push(obj);
                     } else {
-
                         iface = peek_interface(cs.master);
                         if (iface) {
                             if (iface.Device)
@@ -1070,6 +1075,12 @@ function NetworkManagerModel() {
                 return call_object_method(get_object("/org/freedesktop/NetworkManager", type_Manager),
                                           "org.freedesktop.NetworkManager", "ActivateConnection",
                                           objpath(connection), objpath(this), objpath(specific_object));
+            },
+
+            activate_with_settings: function(settings, specific_object) {
+                return call_object_method(get_object("/org/freedesktop/NetworkManager", type_Manager),
+                                          "org.freedesktop.NetworkManager", "AddAndActivateConnection",
+                                          settings_to_nm(settings), objpath(this), objpath(specific_object));
             },
 
             disconnect: function () {
@@ -1519,7 +1530,7 @@ PageNetworking.prototype = {
     enter: function () {
         var self = this;
 
-        this.log_box = server.logbox([ "_SYSTEMD_UNIT=NetworkManager.service",
+        this.log_box = journal.logbox([ "_SYSTEMD_UNIT=NetworkManager.service",
                                        "_SYSTEMD_UNIT=firewalld.service" ], 10);
         $('#networking-log').empty().append(this.log_box);
 
@@ -1556,14 +1567,6 @@ PageNetworking.prototype = {
 
             // Skip slaves
             if (has_master(iface))
-                return;
-
-            // Skip everything that is not ethernet, bond, or bridge
-            if (iface.Device && iface.Device.DeviceType != 'ethernet' &&
-                iface.Device.DeviceType != 'bond' &&
-                iface.Device.DeviceType != 'team' &&
-                iface.Device.DeviceType != 'vlan' &&
-                iface.Device.DeviceType != 'bridge')
                 return;
 
             // Skip everything that's not Managed
@@ -1609,7 +1612,7 @@ PageNetworking.prototype = {
         PageNetworkBondSettings.settings =
             {
                 connection: {
-                    id: uuid,
+                    id: iface,
                     autoconnect: false,
                     type: "bond",
                     uuid: uuid,
@@ -1642,7 +1645,7 @@ PageNetworking.prototype = {
         PageNetworkTeamSettings.settings =
             {
                 connection: {
-                    id: uuid,
+                    id: iface,
                     autoconnect: false,
                     type: "team",
                     uuid: uuid,
@@ -1673,7 +1676,7 @@ PageNetworking.prototype = {
         PageNetworkBridgeSettings.settings =
             {
                 connection: {
-                    id: uuid,
+                    id: iface,
                     autoconnect: false,
                     type: "bridge",
                     uuid: uuid,
@@ -1694,7 +1697,7 @@ PageNetworking.prototype = {
     },
 
     add_vlan: function () {
-        var iface, i, uuid;
+        var uuid;
 
         uuid = generate_uuid();
 
@@ -1704,7 +1707,7 @@ PageNetworking.prototype = {
         PageNetworkVlanSettings.settings =
             {
                 connection: {
-                    id: uuid,
+                    id: "",
                     autoconnect: false,
                     type: "vlan",
                     uuid: uuid,
@@ -1879,6 +1882,7 @@ PageNetworkInterface.prototype = {
         });
 
         function handle_usage_samples() {
+            // console.log(usage_samples);
             for (var iface in usage_samples) {
                 var samples = usage_samples[iface];
                 var rx = samples[0][0];
@@ -1969,12 +1973,10 @@ PageNetworkInterface.prototype = {
                 fail(fail);
         }
 
-        if (self.ghost_settings) {
-            settings_manager.add_connection(self.ghost_settings).
-                done(activate).
-                fail(fail);
-        } else if (self.main_connection) {
+        if (self.main_connection) {
             activate(self.main_connection);
+        } else if (self.dev && self.ghost_settings) {
+            self.dev.activate_with_settings(self.ghost_settings, null).fail(fail);
         } else
             self.update();
     },
@@ -2003,8 +2005,8 @@ PageNetworkInterface.prototype = {
 
         var desc, cs;
         if (dev) {
-            if (dev.DeviceType == 'ethernet') {
-                desc = cockpit.format("$IdVendor $IdModel $Driver)", dev);
+            if (dev.DeviceType == 'ethernet' || dev.IdVendor || dev.IdModel) {
+                desc = cockpit.format("$IdVendor $IdModel $Driver", dev);
             } else if (dev.DeviceType == 'bond') {
                 desc = _("Bond");
             } else if (dev.DeviceType == 'team') {
@@ -2013,7 +2015,8 @@ PageNetworkInterface.prototype = {
                 desc = _("VLAN");
             } else if (dev.DeviceType == 'bridge') {
                 desc = _("Bridge");
-            }
+            } else
+                desc = cockpit.format(_('Unknown "$0"'), dev.DeviceType);
         } else if (iface) {
             cs = connection_settings(iface.Connections[0]);
             if (cs.type == "bond")
@@ -2024,6 +2027,8 @@ PageNetworkInterface.prototype = {
                 desc = _("VLAN");
             else if (cs.type == "bridge")
                 desc = _("Bridge");
+            else if (cs.type)
+                desc = cockpit.format(_('Unknown "$0"'), cs.type);
             else
                 desc = _("Unknown");
         } else
@@ -2035,8 +2040,6 @@ PageNetworkInterface.prototype = {
 
         this.device_onoff.onoff("disabled", !iface);
         this.device_onoff.onoff("value", !!(dev && dev.ActiveConnection));
-
-        $('#network-interface-disconnect').prop('disabled', !dev || !dev.ActiveConnection);
 
         var is_deletable = (iface && !dev) || (dev && (dev.DeviceType == 'bond' ||
                                                        dev.DeviceType == 'team' ||
@@ -2419,16 +2422,10 @@ PageNetworkInterface.prototype = {
         }
 
         function create_ghost_connection_settings() {
-            var uuid = generate_uuid();
             return {
                 connection: {
-                    id: uuid,
-                    uuid: uuid,
                     autoconnect: false,
-                    type: "802-3-ethernet",
                     interface_name: iface.Name
-                },
-                ethernet: {
                 },
                 ipv4: {
                     method: "auto",
@@ -2486,6 +2483,8 @@ PageNetworkInterface.prototype = {
             var slave_ifaces = { };
 
             tbody.empty();
+            self.rx_series.clear_instances();
+            self.tx_series.clear_instances();
 
             var cs = connection_settings(con);
             if (!con || (cs.type != "bond" && cs.type != "team" && cs.type != "bridge")) {
@@ -2509,6 +2508,7 @@ PageNetworkInterface.prototype = {
 
                     self.rx_series.add_instance(iface.Name);
                     self.tx_series.add_instance(iface.Name);
+                    add_usage_monitor(iface.Name);
                     slave_ifaces[iface.Name] = true;
 
                     rows[iface.Name] =
@@ -2947,23 +2947,20 @@ function set_slave(model, master_connection, master_settings, slave_type,
     var cs = connection_settings(main_connection);
     if (val) {
         /* Turn the main_connection into a slave for master, if
-         * necessary.  If there is no main_connection, we assume that
-         * this is a ethernet device and create a suitable connection.
+         * necessary.  If there is no main_connection, we let NM
+         * create a new one.  Unfortunately, this requires us to
+         * activate it at the same time.
          */
 
         if (!main_connection) {
-            uuid = generate_uuid();
-            return model.get_settings().add_connection({ connection:
-                                                         { id: uuid,
-                                                           uuid: uuid,
-                                                           autoconnect: true,
-                                                           type: "802-3-ethernet",
+            if (!iface.Device)
+                return false;
+
+            return iface.Device.activate_with_settings({ connection:
+                                                         { autoconnect: true,
                                                            interface_name: iface.Name,
                                                            slave_type: slave_type,
                                                            master: master_settings.connection.uuid
-                                                         },
-                                                         ethernet:
-                                                         {
                                                          }
                                                        });
         } else if (cs.master != master_settings.connection.uuid) {
@@ -3108,6 +3105,7 @@ PageNetworkBondSettings.prototype = {
                     change(function (event) {
                         var val = $(event.target).val();
                         settings.bond.interface_name = val;
+                        settings.connection.id = val;
                         settings.connection.interface_name = val;
                     });
         body.find('#network-bond-settings-members').
@@ -3273,6 +3271,7 @@ PageNetworkTeamSettings.prototype = {
                     change(function (event) {
                         var val = $(event.target).val();
                         settings.team.interface_name = val;
+                        settings.connection.id = val;
                         settings.connection.interface_name = val;
                     });
         body.find('#network-team-settings-members').
@@ -3501,6 +3500,7 @@ PageNetworkBridgeSettings.prototype = {
                       change(function (event) {
                                 var val = $(event.target).val();
                                 options.interface_name = val;
+                                settings.connection.id = val;
                                 settings.connection.interface_name = val;
                             });
         body.find('#network-bridge-settings-slave-interfaces').
@@ -3687,6 +3687,7 @@ PageNetworkVlanSettings.prototype = {
                 name_input.val(options.parent + "." + options.id);
 
             options.interface_name = name_input.val();
+            settings.connection.id = options.interface_name;
             settings.connection.interface_name = options.interface_name;
         }
 
@@ -3931,5 +3932,3 @@ function init() {
 }
 
 $(init);
-
-});

@@ -224,6 +224,10 @@ class TestNetworking(MachineCase):
         b.wait_popdown("network-bond-settings-dialog")
         b.wait_present("#networking-interfaces tr[data-interface='tbond']")
 
+        # Check that the configuration file has the expected sane name
+        # on systems that use "network-scripts".
+        m.execute("! test -d /etc/sysconfig || test -f /etc/sysconfig/network-scripts/ifcfg-tbond")
+
         # Check that the members are displayed
         b.click("#networking-interfaces tr[data-interface='tbond'] td:first-child")
         b.wait_visible("#network-interface")
@@ -285,6 +289,10 @@ class TestNetworking(MachineCase):
         b.wait_popdown("network-team-settings-dialog")
         b.wait_present("#networking-interfaces tr[data-interface='tteam']")
 
+        # Check that the configuration file has the expected sane name
+        # on systems that use "network-scripts".
+        m.execute("! test -d /etc/sysconfig || test -f /etc/sysconfig/network-scripts/ifcfg-tteam")
+
         # Check that the members are displayed
         b.click("#networking-interfaces tr[data-interface='tteam'] td:first-child")
         b.wait_visible("#network-interface")
@@ -343,12 +351,46 @@ class TestNetworking(MachineCase):
         b.wait_popdown("network-bridge-settings-dialog")
         b.wait_present("#networking-interfaces tr[data-interface='tbridge']")
 
+        # Check that the configuration file has the expected sane name
+        # on systems that use "network-scripts".
+        m.execute("! test -d /etc/sysconfig || test -f /etc/sysconfig/network-scripts/ifcfg-tbridge")
+
         # Delete the bridge
         b.click("#networking-interfaces tr[data-interface='tbridge'] td:first-child")
         b.wait_visible("#network-interface")
         b.click("#network-interface button:contains('Delete')")
         b.wait_visible("#networking")
         b.wait_not_present("#networking-interfaces tr[data-interface='tbridge']")
+
+    def testOther(self):
+        b = self.browser
+        m = self.machine
+
+        iface = "tun0"
+
+        # Create a tun device and let NetworkManager manage it
+        try:
+            m.execute("ip tuntap add mode tun dev %s" % iface)
+            m.execute("nmcli --wait 0 dev con %s" % iface)
+        except:
+            return unittest.skip("No 'tun' support.")
+
+        self.login_and_go("/network")
+        self.wait_for_iface(iface)
+        b.click("#networking-interfaces tr[data-interface='%s']" % iface)
+        b.wait_visible("#network-interface")
+
+        # Configure a manual IP address
+        #
+        b.click("tr:contains('IPv4') a")
+        b.wait_popup("network-ip-settings-dialog")
+        b.click("#network-ip-settings-dialog .btn.dropdown-toggle")
+        b.click("#network-ip-settings-dialog a:contains('Manual')")
+        b.set_val('#network-ip-settings-dialog input[placeholder="Address"]', "1.2.3.4")
+        b.set_val('#network-ip-settings-dialog input[placeholder*="Netmask"]', "24")
+        b.click("#network-ip-settings-dialog button:contains('Apply')")
+        b.wait_popdown("network-ip-settings-dialog")
+        b.wait_in_text("tr:contains('Status')", "1.2.3.4/24")
 
 if __name__ == '__main__':
     test_main()

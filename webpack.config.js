@@ -4,6 +4,13 @@
 
 var info = {
     entries: {
+        "docker/docker": [
+            "docker/containers.js",
+            "docker/docker.css",
+        ],
+        "docker/console.js": [
+            "docker/console.js",
+        ],
         "kubernetes/kubernetes": [
             "kubernetes/styles/main.less",
             "kubernetes/scripts/main.js",
@@ -12,9 +19,16 @@ var info = {
             "kubernetes/styles/registry.less",
             "kubernetes/scripts/registry.js",
         ],
+        "networkmanager/network": [
+            "networkmanager/interfaces.js",
+            "networkmanager/networking.css",
+        ],
         "ostree/ostree": [
             "ostree/app.js",
             "ostree/ostree.css",
+        ],
+        "realmd/domain": [
+            "realmd/operation.js",
         ],
         "selinux/selinux": [
             "selinux/setroubleshoot.js",
@@ -23,6 +37,10 @@ var info = {
         "sosreport/sosreport": [
             "sosreport/index.js",
             "sosreport/sosreport.css",
+        ],
+        "storaged/storage": [
+            "storaged/devices.js",
+            "storaged/storage.css",
         ],
         "subscriptions/subscriptions": [
             "subscriptions/main.js",
@@ -35,13 +53,23 @@ var info = {
     },
 
     files: [
+        "docker/console.html",
+        "docker/manifest.json",
+        "docker/index.html",
+        "docker/images/drive-harddisk-symbolic.svg",
+
         "kubernetes/manifest.json",
         "kubernetes/override.json",
         "kubernetes/index.html",
         "kubernetes/registry.html",
 
+        "networkmanager/index.html",
+        "networkmanager/manifest.json",
+
         "ostree/manifest.json",
         "ostree/index.html",
+
+        "realmd/manifest.json",
 
         "selinux/manifest.json",
         "selinux/setroubleshoot.html",
@@ -49,6 +77,11 @@ var info = {
         "sosreport/index.html",
         "sosreport/sosreport.png",
         "sosreport/manifest.json",
+
+        "storaged/index.html",
+        "storaged/manifest.json",
+        "storaged/images/storage-array.png",
+        "storaged/images/storage-disk.png",
 
         "users/index.html",
         "users/manifest.json",
@@ -81,6 +114,7 @@ if (typeof(global.Promise) == "undefined")
 var srcdir = process.env.SRCDIR || __dirname;
 var pkgdir = srcdir + path.sep + "pkg";
 var distdir = (process.env.BUILDDIR || __dirname) + path.sep + "dist";
+var libdir = path.resolve(srcdir, "lib");
 
 /* A standard nodejs and webpack pattern */
 var production = process.env.NODE_ENV === 'production';
@@ -130,7 +164,7 @@ module.exports = {
             "react": "react-lite-cockpit/dist/react-lite.js",
             "term": "term.js-cockpit/src/term.js",
         },
-        modulesDirectories: [ path.resolve(srcdir, "lib") ]
+        modulesDirectories: [ libdir ]
     },
     resolveLoader: {
         root: path.resolve(srcdir, 'node_modules')
@@ -165,7 +199,7 @@ module.exports = {
             },
             {
                 test: /\.css$/,
-                loader: extract.extract("style-loader", "css-loader")
+                loader: extract.extract("style-loader", "css-loader?root=" + libdir)
             },
             {
                 test: /\.jsx$/,

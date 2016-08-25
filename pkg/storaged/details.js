@@ -17,15 +17,19 @@
  * along with Cockpit; If not, see <http://www.gnu.org/licenses/>.
  */
 
-define([
-    "jquery",
-    "base1/cockpit",
-    "./mustache",
-    "system/server",
-    "./utils",
-    "./dialog",
-    "./permissions"
-], function($, cockpit, mustache, server, utils, dialog, permissions) {
+(function() {
+    "use strict";
+
+    var $ = require("jquery");
+    var cockpit = require("cockpit");
+
+    var mustache = require("mustache");
+    var journal = require("journal");
+
+    var utils = require("./utils");
+    var dialog = require("./dialog");
+    var permissions = require("./permissions");
+
     var _ = cockpit.gettext;
     var C_ = cockpit.gettext;
 
@@ -1719,7 +1723,7 @@ define([
         $(client).on('changed', render);
 
         $('#storage-detail-log').append(
-            server.logbox([ "_SYSTEMD_UNIT=storaged.service", "+",
+            journal.logbox([ "_SYSTEMD_UNIT=storaged.service", "+",
                             "_SYSTEMD_UNIT=udisks2.service", "+",
                             "_SYSTEMD_UNIT=dm-event.service", "+",
                             "_SYSTEMD_UNIT=smartd.service", "+",
@@ -1754,8 +1758,8 @@ define([
         };
     }
 
-    return {
+    module.exports = {
         init: init_details
     };
 
-});
+}());
